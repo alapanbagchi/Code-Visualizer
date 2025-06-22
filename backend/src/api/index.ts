@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import CodeExecutionRoutes from "./routes/codeExecution.router";
 import * as rabbitmqClient from "./utils/rabbitmqClient";
 import cors from "cors";
-
+import db from "../common/db";
 dotenv.config();
 
 const app = express();
@@ -29,6 +29,8 @@ app.use("/code", CodeExecutionRoutes);
 const startApiServer = async () => {
   try {
     await rabbitmqClient.connect(RABBITMQ_URL);
+    await db.query("SELECT 1");
+    console.log("API: Connected to PostgreSQL");
     app.listen(PORT, () => {
       console.log(`API server listening on port ${PORT}`);
     });
