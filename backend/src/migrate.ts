@@ -72,3 +72,5 @@ const migrate = async () => {
     await db.end();
   }
 };
+
+migrate();

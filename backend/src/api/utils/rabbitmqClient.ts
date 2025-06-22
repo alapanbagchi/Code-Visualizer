@@ -44,6 +44,7 @@ export const publishMessage = (message: JobPayload): boolean => {
     );
     return false;
   }
+  console.log("RABBITMQ:", message);
   return channel.sendToQueue(
     CONSTANTS.QUEUE_NAME,
     Buffer.from(JSON.stringify(message)),
