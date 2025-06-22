@@ -5,17 +5,36 @@ import {
   JobStatus,
 } from "../../common/types";
 import * as jobService from "../services/jobServices";
+import { publishMessage } from "../utils/rabbitmqClient";
 
 const CodeExecutionController = {
   executeCode: async (req: Request, res: Response) => {
-    const code = req.body.code;
+    const { code } = req.body as CodeExecutionRequest;
     if (!code) {
       return res.status(400).json({ error: "Code is required" });
     }
+
     try {
-      const job = await jobService.submitJob(code);
-      res.json(job);
+      const { jobId, status } = await jobService.submitJob(code);
+
+      // Publish job to RabbitMQ
+      const published = publishMessage({ jobId, code });
+      if (!published) {
+        console.error(`API: Failed to publish job ${jobId} to RabbitMQ.`);
+        await jobService.updateJobStatus(jobId, "error", {
+          output: "",
+          error: "Failed to queue job",
+          execution_trace: [],
+        });
+        return res
+          .status(500)
+          .json({ error: "Failed to queue job for execution." });
+      }
+
+      console.log(`API: Job ${jobId} published to RabbitMQ.`);
+      res.json({ jobId, status });
     } catch (error: any) {
+      console.error(`API: Error submitting code:`, error);
       res
         .status(500)
         .json({ error: "Failed to submit job", details: error.message });
@@ -31,21 +50,40 @@ const CodeExecutionController = {
       return res.status(400).json({ error: "jobId and status are required" });
     }
 
-    const updated = jobService.updateJobStatus(jobId, status, result || null);
-    if (updated) {
-      res.json({ success: true });
-    } else {
-      res.status(404).json({ error: "Job not found" });
+    try {
+      const updated = await jobService.updateJobStatus(
+        jobId,
+        status,
+        result || null
+      );
+      if (updated) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Job not found" });
+      }
+    } catch (error: any) {
+      console.error("Error updating job status via API:", error);
+      res
+        .status(500)
+        .json({ error: "Failed to update job status", details: error.message });
     }
   },
   jobStatus: async (req: Request, res: Response) => {
     const { jobId } = req.params;
-    const job = jobService.getJobStatus(jobId);
+    try {
+      const job = await jobService.getJobStatus(jobId);
 
-    if (!job) {
-      return res.status(404).json({ error: "Job not found" });
+      if (!job) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      res.json(job);
+    } catch (error: any) {
+      console.error("Error getting job status via API:", error);
+      res.status(500).json({
+        error: "Failed to retrieve job status",
+        details: error.message,
+      });
     }
-    res.json(job);
   },
 };
 

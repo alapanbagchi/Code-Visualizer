@@ -26,6 +26,7 @@ export interface CodeExecutionResult {
 }
 
 export interface Job {
+  jobId: string;
   status: JobStatus;
   result: CodeExecutionResult | null;
 }
