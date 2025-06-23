@@ -30,27 +30,26 @@ export interface TraceEntry {
   timestamp?: number;
 }
 
-// Represents the result of a code execution from the sandbox
 export interface CodeExecutionResult {
   output: string;
   error: string | null;
-  execution_trace: TraceEntry[]; // Now contains richer data
-  passFailStatus?: PassFailStatus; // NEW: Result includes pass/fail status
+  execution_trace: TraceEntry[];
+  passFailStatus?: PassFailStatus;
+  executionTime?: number;
 }
 
-// Represents the structure of a job stored in the jobStore (database)
 export interface Job {
   jobId: string;
   code: string;
   status: JobStatus;
-  expectedOutput: string | null; // NEW: Stored expected output
-  passFailStatus: PassFailStatus; // NEW: Stored pass/fail status
+  expectedOutput: string | null;
+  passFailStatus: PassFailStatus;
   output: string | null;
   error: string | null;
-  executionTrace: TraceEntry[] | null; // Renamed from execution_trace for consistency
+  executionTrace: TraceEntry[] | null;
+  executionTime: number | null;
 }
 
-// Request and Response types for Express (from Day 1/2)
 export interface Request extends Express.Request {
   body: {
     code?: string;
