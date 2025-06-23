@@ -3,7 +3,7 @@ import db from "./common/db";
 import * as fs from "fs/promises";
 
 const MIGRATIONS_DIR = path.join(__dirname, "../migrations");
-const MIGRATION_TABLE = "_migrations"; // Table to track applied migrations
+const MIGRATION_TABLE = "_migrations";
 const ensureMigrationTableExists = async () => {
   await db.query(`
         CREATE TABLE IF NOT EXISTS ${MIGRATION_TABLE} (
@@ -46,7 +46,7 @@ const migrate = async () => {
     const appliedMigrations = await getAppliedMigrations();
 
     const migrationFiles = await fs.readdir(MIGRATIONS_DIR);
-    const sortedMigrationFiles = migrationFiles.sort(); // Ensure migrations run in order
+    const sortedMigrationFiles = migrationFiles.sort();
 
     for (const file of sortedMigrationFiles) {
       if (file.endsWith(".sql")) {

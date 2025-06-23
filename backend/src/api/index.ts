@@ -41,3 +41,5 @@ const startApiServer = async () => {
 };
 
 startApiServer();
+
+export default app;

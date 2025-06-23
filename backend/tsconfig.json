@@ -9,8 +9,12 @@
     "skipLibCheck": true,                       /* Skip type checking of declaration files. */
     "forceConsistentCasingInFileNames": true,   /* Disallow inconsistently-cased file names. */
     "resolveJsonModule": true,                  /* Allow importing modules with a '.json' extension. */
-    "sourceMap": true                           /* Generates corresponding '.map' file. */
+    "sourceMap": true,
+    "types": ["jest"],
+    "typeRoots": [
+      "./src/common/types", "./node_modules/@types"
+    ]                          /* Generates corresponding '.map' file. */
   },
-  "include": ["src/**/*.ts"],                   /* Specify files to include in compilation. */
+  "include": ["src/**/*.ts", "tests"],                   /* Specify files to include in compilation. */
   "exclude": ["node_modules"]                   /* Specify files to exclude from compilation. */
 }
