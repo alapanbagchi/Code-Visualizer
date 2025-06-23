@@ -1,7 +1,7 @@
 # codeviz-ai/backend/src/common/tracer.py
 import sys
 import json
-import time
+import time # Ensure time is imported here
 import inspect
 import os
 import io
@@ -111,8 +111,7 @@ class Tracer:
 
 # --- Main execution block ---
 if __name__ == "__main__":
-    # OLD: user_code = sys.stdin.read()
-    # NEW: Read user code from the mounted file
+    # Read user code from the mounted file
     USER_CODE_PATH = '/mnt/user_code.py'
     try:
         with open(USER_CODE_PATH, 'r') as f:
@@ -142,8 +141,18 @@ if __name__ == "__main__":
     start_time = time.perf_counter()
 
     try:
-        with Tracer() as tracer_instance:
-            exec(user_code, {}, {})
+        # Define the global namespace for exec()
+        # Explicitly include __builtins__ and any modules the user code might need
+        # This is more robust than relying solely on __builtins__ for imports
+        exec_globals = {
+            '__builtins__': __builtins__,
+            'sys': sys,
+            'os': os,
+            'time': time, # NEW: Explicitly provide the time module
+            # Add other common modules here if needed, e.g., 'math': math
+        }
+        exec(user_code, exec_globals, {}) # Pass the prepared globals
+
         output_data["execution_trace"] = _trace_events
     except Exception as e:
         output_data["error"] = str(e)
