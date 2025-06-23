@@ -4,7 +4,14 @@ import json
 import time
 import inspect
 import os
-import io # Import io for StringIO
+import io
+
+# --- DEBUGGING PRINTS (These will go to the Docker container's stderr) ---
+# Use sys.__stderr__ to bypass our own redirection
+print("DEBUG: tracer.py started.", file=sys.__stderr__)
+print(f"DEBUG: PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED')}", file=sys.__stderr__)
+print(f"DEBUG: sys.stdout type before redirection: {type(sys.stdout)}", file=sys.__stderr__)
+# --- END DEBUGGING PRINTS ---
 
 # Global list to store trace events
 _trace_events = []
@@ -102,45 +109,53 @@ class Tracer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.settrace(None) # Disable tracing
 
-    def get_trace(self):
-        return _trace_events
-
 # --- Main execution block ---
 if __name__ == "__main__":
-    # Read user code from stdin
-    user_code = sys.stdin.read()
+    # OLD: user_code = sys.stdin.read()
+    # NEW: Read user code from the mounted file
+    USER_CODE_PATH = '/mnt/user_code.py'
+    try:
+        with open(USER_CODE_PATH, 'r') as f:
+            user_code = f.read()
+    except FileNotFoundError:
+        user_code = "" # Handle case where file might not be found
+        print(f"ERROR: User code file not found at {USER_CODE_PATH}", file=sys.__stderr__)
 
-    # Prepare output structure
+
     output_data = {
         "output": "",
         "error": None,
         "execution_trace": [],
-        "execution_time": 0.0 # NEW: Initialize execution time
+        "execution_time": 0.0
     }
 
-    # Redirect stdout and stderr to capture output
     old_stdout = sys.stdout
     old_stderr = sys.stderr
-    sys.stdout = captured_stdout = io.StringIO() # Use io.StringIO
-    sys.stderr = captured_stderr = io.StringIO() # Use io.StringIO
+    sys.stdout = captured_stdout = io.StringIO()
+    sys.stderr = captured_stderr = io.StringIO()
 
-    start_time = time.perf_counter() # NEW: Start timer
+    print(f"DEBUG: sys.stdout type after redirection: {type(sys.stdout)}", file=sys.__stderr__)
+    print("DEBUG: Attempting to execute user code.", file=sys.__stderr__)
+    print(f"DEBUG: User code length: {len(user_code)}", file=sys.__stderr__)
+    print(f"DEBUG: User code snippet: '{user_code[:50]}...'", file=sys.__stderr__)
+
+    start_time = time.perf_counter()
 
     try:
-        with Tracer() as tracer:
-            # Execute the user's code
-            # Use a dictionary for globals and locals to isolate execution
+        with Tracer() as tracer_instance:
             exec(user_code, {}, {})
-        output_data["execution_trace"] = tracer.get_trace()
+        output_data["execution_trace"] = _trace_events
     except Exception as e:
         output_data["error"] = str(e)
+        print(f"DEBUG: Exception during execution: {e}", file=sys.__stderr__)
     finally:
-        end_time = time.perf_counter() # NEW: End timer
-        output_data["execution_time"] = round(end_time - start_time, 4) # NEW: Calculate and round time
+        end_time = time.perf_counter()
+        output_data["execution_time"] = round(end_time - start_time, 4)
 
         # Restore stdout and stderr
         sys.stdout = old_stdout
         sys.stderr = old_stderr
+
         output_data["output"] = captured_stdout.getvalue()
         if captured_stderr.getvalue():
             if output_data["error"]:
@@ -148,5 +163,9 @@ if __name__ == "__main__":
             else:
                 output_data["error"] = captured_stderr.getvalue()
 
-    # Print the JSON output to stdout
+        print(f"DEBUG: Captured stdout content length: {len(output_data['output'])}", file=sys.__stderr__)
+        print(f"DEBUG: Captured stdout content: '{output_data['output']}'", file=sys.__stderr__)
+        print(f"DEBUG: Captured stderr content: '{captured_stderr.getvalue()}'", file=sys.__stderr__)
+        print("DEBUG: tracer.py finished.", file=sys.__stderr__)
+
     print(json.dumps(output_data))

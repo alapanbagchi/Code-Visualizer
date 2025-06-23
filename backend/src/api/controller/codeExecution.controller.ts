@@ -70,9 +70,17 @@ const CodeExecutionController = {
     if (!jobId || !status) {
       return res.status(400).json({ error: "jobId and status are required" });
     }
-
+    console.log(result);
     try {
-      const updated = await jobService.updateJobStatus(jobId, status);
+      const updated = await jobService.updateJobStatus(
+        jobId,
+        status,
+        result?.output,
+        result?.error,
+        result?.execution_trace,
+        result?.passFailStatus,
+        result?.execution_time
+      );
       if (updated) {
         res.json({ success: true });
       } else {

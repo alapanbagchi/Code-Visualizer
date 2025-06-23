@@ -61,6 +61,15 @@ export const updateJobStatus = async (
   passFailStatus: PassFailStatus | null = null,
   executionTime: number | null = null
 ): Promise<boolean> => {
+  console.log(
+    jobId,
+    status,
+    output,
+    error,
+    executionTrace,
+    passFailStatus,
+    executionTime
+  );
   try {
     const query = `
             UPDATE jobs
@@ -78,7 +87,7 @@ export const updateJobStatus = async (
       output,
       error,
       executionTrace ? JSON.stringify(executionTrace) : null,
-      passFailStatus,
+      passFailStatus || "not_applicable",
       executionTime,
       jobId,
     ];
@@ -124,7 +133,7 @@ export const getJobStatus = async (jobId: string): Promise<Job | null> => {
             error: dbJob.error || null,
             execution_trace: parsedExecutionTrace || [],
             passFailStatus: dbJob.pass_fail_status as PassFailStatus,
-            executionTime: dbJob.execution_time || null,
+            execution_time: dbJob.execution_time || null,
           }
         : null;
 

@@ -1,87 +1,73 @@
 // codeviz-ai/backend/src/worker/services/sandboxService.ts
-import { spawn, ChildProcess } from "child_process";
+import { spawn } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
-import * as os from "os"; // Import the 'os' module for platform detection
 import { CONSTANTS } from "../../common/constants";
-import { CodeExecutionResult } from "../../common/types";
+import { CodeExecutionResult, TraceEntry } from "../../common/types";
 
-// Helper function to convert host paths to Docker-compatible paths
-// This is crucial for Windows hosts when mounting volumes
-const convertHostPathToDockerPath = (hostPath: string): string => {
-  if (os.platform() === "win32") {
-    // Replace all backslashes with forward slashes
-    let dockerPath = hostPath.replace(/\\/g, "/");
-    // If the path starts with a drive letter (e.g., C:), convert it to /c/ format
-    // Docker Desktop on Windows maps C:\ to /c/, D:\ to /d/, etc.
-    if (dockerPath.match(/^[A-Za-z]:\//)) {
-      dockerPath = `/${dockerPath
-        .charAt(0)
-        .toLowerCase()}${dockerPath.substring(2)}`;
-    }
-    return dockerPath;
-  }
-  // For Linux/macOS, paths are already compatible, so return as is
-  return hostPath;
+// Helper to get OS-specific temp directory
+const getTempDir = () => {
+  // On Windows, use a path that Docker Desktop can easily mount
+  // On Linux/macOS, use standard /tmp
+  return process.platform === "win32" ? "C:\\temp" : "/tmp";
 };
 
-/**
- * Executes Python code in a Docker sandbox.
- * @param {string} jobId - The ID of the job (used for temporary file naming).
- * @param {string} code - The Python code to execute.
- * @returns {Promise<CodeExecutionResult>} A promise that resolves with the execution result (output, error, trace).
- */
+// Helper to normalize paths for Docker mounts on Windows
+const normalizePathForDocker = (p: string) => {
+  if (process.platform === "win32") {
+    // Convert C:\temp\path to /c/temp/path for Docker Desktop's WSL2 backend
+    // Or ensure it's a path Docker can understand (e.g., if using bind mounts directly)
+    // For simplicity, assuming Docker Desktop's default behavior with C: drive mounts
+    return p
+      .replace(/\\/g, "/")
+      .replace(/^([A-Z]):/, (match, drive) => `/${drive.toLowerCase()}`);
+  }
+  return p;
+};
+
 export const executeCodeInSandbox = async (
   jobId: string,
   code: string
 ): Promise<CodeExecutionResult> => {
-  // Use os.tmpdir() for a cross-platform temporary directory
-  // This will resolve to a system-appropriate temp directory (e.g., /tmp on Linux, C:\Users\...\AppData\Local\Temp on Windows)
-  const tempDir = path.join(os.tmpdir(), `codeviz-${jobId}`);
+  const tempDir = path.join(getTempDir(), `codeviz-${jobId}`);
   const userCodePath = path.join(tempDir, "user_code.py");
-  const tracerScriptPath = path.join(tempDir, "tracer.py");
+  const tracerPath = path.join(__dirname, "../../common/tracer.py"); // Path to the tracer.py in dist
 
   let executionResult: CodeExecutionResult = {
     output: "",
     error: null,
     execution_trace: [],
+    execution_time: 0,
   };
 
   try {
-    // Create the temporary directory
     await fs.mkdir(tempDir, { recursive: true });
-    // Write the user's code to a temporary file
     await fs.writeFile(userCodePath, code);
-    // Copy the tracer.py script to the temporary directory
-    await fs.writeFile(
-      tracerScriptPath,
-      await fs.readFile(path.join(__dirname, "../../common/tracer.py"))
-    );
+    // Ensure tracer.py is copied to the temp directory for consistent mounting
+    await fs.copyFile(tracerPath, path.join(tempDir, "tracer.py"));
 
-    // Convert host paths to Docker-compatible format for volume mounts
-    const dockerUserCodePath = convertHostPathToDockerPath(userCodePath);
-    const dockerTracerScriptPath =
-      convertHostPathToDockerPath(tracerScriptPath);
-
-    const executionContainerName = `sandbox-exec-${jobId}`;
     const dockerArgs = [
       "run",
-      "--rm", // Automatically remove container after exit
+      "--rm", // Automatically remove the container when it exits
       "--name",
-      executionContainerName,
+      `codeviz-exec-${jobId}`,
       "--network",
-      "none", // No network access for sandbox
+      "none", // Isolate network
       "--memory",
-      "128m", // 128 MB memory limit
+      "128m", // Limit memory to 128MB
       "--cpus",
-      "0.5", // 0.5 CPU core limit
+      "0.5", // Limit CPU to 0.5 cores
       "-v",
-      `${dockerUserCodePath}:/mnt/user_code.py`, // Mount user's code using converted path
+      `${normalizePathForDocker(userCodePath)}:/mnt/user_code.py`, // Mount user code
       "-v",
-      `${dockerTracerScriptPath}:/mnt/tracer.py`, // Mount tracer script using converted path
+      `${normalizePathForDocker(
+        path.join(tempDir, "tracer.py")
+      )}:/mnt/tracer.py`, // Mount tracer
+      "-e",
+      "PYTHONUNBUFFERED=1", // NEW: Ensure Python output is unbuffered
       CONSTANTS.SANDBOX_IMAGE,
       "python3",
-      "/mnt/tracer.py", // Command to run tracer inside container
+      "/mnt/tracer.py",
     ];
 
     console.log(
@@ -93,44 +79,56 @@ export const executeCodeInSandbox = async (
     const child = spawn("docker", dockerArgs, {
       timeout: CONSTANTS.EXECUTION_TIMEOUT_SECONDS * 1000,
     });
-    let stdout = "";
-    let stderr = "";
 
-    child.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
+    let stdoutData = "";
+    let stderrData = "";
+
+    child.stdout.on("data", (data) => {
+      stdoutData += data.toString();
     });
-    child.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
+
+    child.stderr.on("data", (data) => {
+      stderrData += data.toString();
     });
 
     await new Promise<void>((resolve, reject) => {
-      child.on("close", (code: number) => {
-        try {
-          // Attempt to parse JSON output from the Python tracer script
-          executionResult = JSON.parse(stdout) as CodeExecutionResult;
-        } catch (e: any) {
-          // If parsing fails, it means the Python script likely crashed or printed non-JSON
-          executionResult.error = `Failed to parse JSON output from sandbox: ${e.message}. Raw stdout: ${stdout}. Stderr: ${stderr}`;
-          executionResult.output = stdout; // Still return whatever output was there
-        }
-
+      child.on("close", (code) => {
         if (code !== 0) {
-          if (!executionResult.error) {
-            // If Python script didn't report an error
-            executionResult.error = `Sandbox process exited with code ${code}. Stderr: ${stderr}`;
-          }
+          // Non-zero exit code indicates an error in the Docker command itself or sandbox
+          reject(
+            new Error(
+              `Sandbox process exited with code ${code}. Stderr: ${stderrData}`
+            )
+          );
+        } else {
+          resolve();
         }
-        resolve();
       });
-      child.on("error", (err: Error) => {
-        // This catches errors like 'docker command not found'
-        reject(new Error(`Error spawning docker process: ${err.message}`));
+
+      child.on("error", (err) => {
+        // This catches errors like 'docker' command not found
+        reject(new Error(`Failed to spawn docker process: ${err.message}`));
+      });
+
+      child.on("timeout", () => {
+        child.kill("SIGTERM"); // Terminate the process
+        reject(
+          new Error(
+            `Code execution timed out after ${CONSTANTS.EXECUTION_TIMEOUT_SECONDS} seconds.`
+          )
+        );
       });
     });
-
-    // Check for timeout explicitly
-    if (child.killed && (child as ChildProcess).signalCode === "SIGTERM") {
-      executionResult.error = `Code execution timed out after ${CONSTANTS.EXECUTION_TIMEOUT_SECONDS} seconds.`;
+    // Attempt to parse the JSON output from the sandbox
+    try {
+      const parsedOutput = JSON.parse(stdoutData);
+      executionResult.output = parsedOutput.output;
+      executionResult.error = parsedOutput.error;
+      executionResult.execution_trace = parsedOutput.execution_trace || [];
+      executionResult.execution_time = parsedOutput.execution_time || null;
+    } catch (jsonError: any) {
+      executionResult.error = `Failed to parse JSON output from sandbox: ${jsonError.message}. Raw stdout: ${stdoutData}. Stderr: ${stderrData}`;
+      executionResult.output = stdoutData; // Keep raw stdout if JSON parsing fails
     }
   } catch (error: any) {
     console.error(
@@ -139,7 +137,7 @@ export const executeCodeInSandbox = async (
     );
     executionResult.error = `Sandbox setup error: ${error.message}`;
   } finally {
-    // Clean up temporary files
+    // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
   }
   return executionResult;

@@ -22,7 +22,7 @@ const updateJobStatusOnApi = async (
   executionTime: number | null = null
 ) => {
   try {
-    await axios.post(`${API_SERVER_URL}/job-update`, {
+    await axios.post(`${API_SERVER_URL}/code/job-update`, {
       jobId,
       status,
       result,
@@ -62,7 +62,6 @@ const handleJobMessage = async (msgContent: string) => {
   let result: CodeExecutionResult;
   let passFailStatus: PassFailStatus = "not_applicable";
   let executionTime: number | null = null;
-
   try {
     jobPayload = JSON.parse(msgContent);
     const { jobId, code, expectedOutput } = jobPayload;
@@ -75,9 +74,9 @@ const handleJobMessage = async (msgContent: string) => {
     // 2. Execute code in sandbox
     try {
       result = await executeCodeInSandbox(jobId, code);
-
+      console.log("RESULT: ", result);
       // 3. Extract execution time from sandbox result
-      executionTime = result.executionTime || null; // NEW: Get execution time
+      executionTime = result.execution_time || null; // NEW: Get execution time
 
       // 4. Compare outputs if expectedOutput is provided
       if (expectedOutput !== undefined && expectedOutput !== null) {
@@ -94,7 +93,7 @@ const handleJobMessage = async (msgContent: string) => {
         result,
         passFailStatus,
         executionTime
-      ); // NEW: Pass executionTime
+      );
     } catch (sandboxError: any) {
       console.error(
         `Worker: Sandbox execution failed for job ${jobId}:`,
@@ -105,7 +104,7 @@ const handleJobMessage = async (msgContent: string) => {
         error: `Sandbox execution failed: ${sandboxError.message}`,
         execution_trace: [],
         passFailStatus: "failed",
-        executionTime: 0,
+        execution_time: 0,
       };
       await updateJobStatusOnApi(jobId, "error", result, "failed", null);
     }

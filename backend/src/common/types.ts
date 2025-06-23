@@ -35,7 +35,7 @@ export interface CodeExecutionResult {
   error: string | null;
   execution_trace: TraceEntry[];
   passFailStatus?: PassFailStatus;
-  executionTime?: number;
+  execution_time?: number;
 }
 
 export interface Job {
