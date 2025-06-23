@@ -151,7 +151,7 @@ if __name__ == "__main__":
             'time': time, # NEW: Explicitly provide the time module
             # Add other common modules here if needed, e.g., 'math': math
         }
-        exec(user_code, exec_globals, {}) # Pass the prepared globals
+        exec(user_code, exec_globals, exec_globals) # Pass the prepared globals
 
         output_data["execution_trace"] = _trace_events
     except Exception as e:
