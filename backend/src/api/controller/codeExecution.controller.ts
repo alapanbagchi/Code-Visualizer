@@ -6,6 +6,7 @@ import {
 } from "../../common/types";
 import * as jobService from "../services/jobServices";
 import { publishMessage } from "../utils/rabbitmqClient";
+import { queryCodeWithRag } from "../../worker/services/sandboxService"; // Directly call sandboxService
 
 const CodeExecutionController = {
   executeCode: async (req: Request, res: Response) => {
@@ -107,6 +108,33 @@ const CodeExecutionController = {
       res.status(500).json({
         error: "Failed to retrieve job status",
         details: error.message,
+      });
+    }
+  },
+  query: async (req: Request, res: Response) => {
+    const { query } = req.body; // Expecting a 'query' field in the request body
+
+    if (!query || typeof query !== "string") {
+      return res.status(400).json({ error: "Query string is required." });
+    }
+
+    try {
+      console.log(`API: Received RAG query: "${query}"`);
+      const result = await queryCodeWithRag(query);
+
+      if (result.status === "success") {
+        res.status(200).json({ status: "success", answer: result.answer });
+      } else {
+        res.status(500).json({
+          status: "error",
+          message: result.message || "Unknown RAG error.",
+        });
+      }
+    } catch (error: any) {
+      console.error("API: Error processing RAG query:", error);
+      res.status(500).json({
+        status: "error",
+        message: `Internal server error: ${error.message}`,
       });
     }
   },

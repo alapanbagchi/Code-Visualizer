@@ -68,3 +68,7 @@ export interface Response extends Express.Response {
   send: (body?: any) => Response;
   locals?: { [key: string]: string };
 }
+
+export interface RagQueryRequest {
+  query: string;
+}

@@ -17,4 +17,8 @@ router.get("/status/:jobId", (req: Request, res: Response) => {
   CodeExecutionController.jobStatus(req, res);
 });
 
+router.get("/query", (req: Request, res: Response) => {
+  CodeExecutionController.query(req, res);
+});
+
 export default router;
