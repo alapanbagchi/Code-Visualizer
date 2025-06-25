@@ -103,7 +103,7 @@ export const updateJobStatus = async (
       console.warn(`API: No fields to update for job ${jobId}.`);
       return false;
     }
-
+    console.log("EXECUTION_TRACE", executionTrace);
     const query = `
         UPDATE jobs
         SET ${setClauses.join(", ")}
@@ -141,26 +141,17 @@ export const getJobStatus = async (jobId: string): Promise<Job | null> => {
     const dbJob = res.rows[0];
 
     // Safely parse JSON fields
-    let executionTrace: TraceEntry[] = [];
-    if (dbJob.execution_trace) {
-      try {
-        executionTrace = JSON.parse(dbJob.execution_trace);
-      } catch (e) {
-        console.error(`Error parsing execution_trace for job ${jobId}:`, e);
-        executionTrace = [];
-      }
-    }
 
     const result: CodeExecutionResult | null =
-      dbJob.output || dbJob.error || executionTrace.length > 0
+      dbJob.output || dbJob.error || dbJob.executionTrace.length > 0
         ? {
             output: dbJob.output || "",
             error: dbJob.error || null,
-            execution_trace: executionTrace,
+            execution_trace: dbJob.execution_trace,
             execution_time: dbJob.execution_time || 0, // Ensure it's a number
           }
         : null;
-
+    console.log(result);
     return {
       jobId: dbJob.job_id,
       code: dbJob.code, // Include code

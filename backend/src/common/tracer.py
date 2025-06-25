@@ -51,12 +51,9 @@ def _trace_function(frame, event, arg):
     """
     global _trace_events
 
-    # Filter out internal frames (e.g., from this tracer, or standard library)
-    # Adjust this path filtering based on your project structure
-    current_file = os.path.basename(frame.f_code.co_filename)
-    # We only want to trace user_code.py
-    if current_file != 'user_code.py':
-        return _trace_function # Continue tracing in user code
+    # Skip internal frames from the tracer itself
+    if frame.f_code.co_filename.endswith('tracer.py'):
+        return _trace_function
 
     # Get a unique ID for the current frame
     frame_id = _get_frame_id(frame)
@@ -64,13 +61,12 @@ def _trace_function(frame, event, arg):
     # Common event data
     event_data = {
         'line_no': frame.f_lineno,
-        'filename': current_file,
+        'filename': frame.f_code.co_filename,
         'timestamp': time.time(),
         'frame_id': frame_id,
     }
 
     if event == 'line':
-        # Capture variable state at each line
         event_data['event'] = 'line'
         event_data['variables'] = _get_variable_snapshot(frame)
         _trace_events.append(event_data)
@@ -81,16 +77,14 @@ def _trace_function(frame, event, arg):
     elif event == 'return':
         event_data['event'] = 'return'
         event_data['function_name'] = frame.f_code.co_name
-        # Optionally, capture return value: event_data['return_value'] = arg
         _trace_events.append(event_data)
     elif event == 'exception':
         event_data['event'] = 'exception'
         event_data['exception_type'] = arg[0].__name__
         event_data['exception_value'] = str(arg[1])
         _trace_events.append(event_data)
-    # 'c_call', 'c_return', 'c_exception' are for C functions, usually not needed for Python visualization
 
-    return _trace_function # Always return the trace function itself
+    return _trace_function
 
 class Tracer:
     """
@@ -98,11 +92,12 @@ class Tracer:
     """
     def __init__(self):
         global _trace_events, _frame_counter, _frame_map
-        _trace_events = [] # Reset for each execution
         _frame_counter = 0
         _frame_map = {}
 
     def __enter__(self):
+        global _trace_events
+        _trace_events = []
         sys.settrace(_trace_function)
         return self
 
@@ -133,7 +128,7 @@ if __name__ == "__main__":
     sys.stdout = captured_stdout = io.StringIO()
     sys.stderr = captured_stderr = io.StringIO()
 
-    print(f"DEBUG: sys.stdout type after redirection: {type(sys.stdout)}", file=sys.__stderr__)
+    print(f"DEBUG: sys.stdoutgg type after redirection: {type(sys.stdout)}", file=sys.__stderr__)
     print("DEBUG: Attempting to execute user code.", file=sys.__stderr__)
     print(f"DEBUG: User code length: {len(user_code)}", file=sys.__stderr__)
     print(f"DEBUG: User code snippet: '{user_code[:50]}...'", file=sys.__stderr__)
@@ -151,8 +146,8 @@ if __name__ == "__main__":
             'time': time, # NEW: Explicitly provide the time module
             # Add other common modules here if needed, e.g., 'math': math
         }
-        exec(user_code, exec_globals, exec_globals) # Pass the prepared globals
-
+        with Tracer():
+            exec(user_code, exec_globals, exec_globals) # Pass the prepared globals
         output_data["execution_trace"] = _trace_events
     except Exception as e:
         output_data["error"] = str(e)
@@ -171,10 +166,5 @@ if __name__ == "__main__":
                 output_data["error"] += "\n" + captured_stderr.getvalue()
             else:
                 output_data["error"] = captured_stderr.getvalue()
-
-        print(f"DEBUG: Captured stdout content length: {len(output_data['output'])}", file=sys.__stderr__)
-        print(f"DEBUG: Captured stdout content: '{output_data['output']}'", file=sys.__stderr__)
-        print(f"DEBUG: Captured stderr content: '{captured_stderr.getvalue()}'", file=sys.__stderr__)
-        print("DEBUG: tracer.py finished.", file=sys.__stderr__)
 
     print(json.dumps(output_data))

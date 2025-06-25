@@ -39,7 +39,6 @@ export const executeCodeInSandbox = async (
 
     const dockerArgs = [
       "run",
-      "--rm", // Automatically remove the container when it exits
       "--name",
       `codeviz-exec-${jobId}`,
       "--network",
