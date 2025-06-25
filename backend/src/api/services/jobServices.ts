@@ -54,43 +54,64 @@ export const submitJob = async (
 };
 export const updateJobStatus = async (
   jobId: string,
-  status: JobStatus,
+  status: JobStatus | undefined, // Make optional
   output: string | null = null,
   error: string | null = null,
   executionTrace: TraceEntry[] | null = null,
   passFailStatus: PassFailStatus | null = null,
-  executionTime: number | null = null
+  executionTime: number | null = null,
+  embeddingsGenerated: boolean | undefined = undefined // NEW: Add embeddingsGenerated
 ): Promise<boolean> => {
-  console.log(
-    jobId,
-    status,
-    output,
-    error,
-    executionTrace,
-    passFailStatus,
-    executionTime
-  );
   try {
+    const setClauses: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (status !== undefined) {
+      setClauses.push(`status = $${paramIndex++}`);
+      values.push(status);
+    }
+    if (output !== undefined) {
+      setClauses.push(`output = $${paramIndex++}`);
+      values.push(output);
+    }
+    if (error !== undefined) {
+      setClauses.push(`error = $${paramIndex++}`);
+      values.push(error);
+    }
+    if (executionTrace !== undefined) {
+      setClauses.push(`execution_trace = $${paramIndex++}`);
+      values.push(executionTrace ? JSON.stringify(executionTrace) : null);
+    }
+    if (passFailStatus !== undefined) {
+      setClauses.push(`pass_fail_status = $${paramIndex++}`);
+      values.push(passFailStatus);
+    }
+    if (executionTime !== undefined) {
+      setClauses.push(`execution_time = $${paramIndex++}`);
+      values.push(executionTime);
+    }
+    if (embeddingsGenerated !== undefined) {
+      // NEW: Handle embeddingsGenerated
+      setClauses.push(`embeddings_generated = $${paramIndex++}`);
+      values.push(embeddingsGenerated);
+    }
+
+    setClauses.push(`updated_at = NOW()`); // Always update timestamp
+
+    if (setClauses.length === 0) {
+      console.warn(`API: No fields to update for job ${jobId}.`);
+      return false;
+    }
+
     const query = `
-            UPDATE jobs
-            SET status = $1,
-                output = $2,
-                error = $3,
-                execution_trace = $4,
-                pass_fail_status = $5,
-                execution_time = $6
-            WHERE job_id = $7
-            RETURNING job_id;
-        `;
-    const values = [
-      status,
-      output,
-      error,
-      executionTrace ? JSON.stringify(executionTrace) : null,
-      passFailStatus || "not_applicable",
-      executionTime,
-      jobId,
-    ];
+        UPDATE jobs
+        SET ${setClauses.join(", ")}
+        WHERE job_id = $${paramIndex++}
+        RETURNING job_id;
+    `;
+    values.push(jobId);
+
     const result = await db.query(query, values);
     if (result.rowCount === 0) {
       console.warn(`API: Job ${jobId} not found for update.`);
@@ -106,10 +127,10 @@ export const updateJobStatus = async (
 export const getJobStatus = async (jobId: string): Promise<Job | null> => {
   try {
     const query = `
-            SELECT job_id, code, status, output, error, execution_trace, expected_output, pass_fail_status, execution_time
-            FROM jobs
-            WHERE job_id = $1;
-        `;
+        SELECT job_id, code, status, output, error, execution_trace, expected_output, pass_fail_status, execution_time, embeddings_generated
+        FROM jobs
+        WHERE job_id = $1;
+    `;
     const values = [jobId];
     const res = await db.query(query, values);
 
@@ -119,34 +140,36 @@ export const getJobStatus = async (jobId: string): Promise<Job | null> => {
 
     const dbJob = res.rows[0];
 
-    // Ensure execution_trace is parsed if it's stored as JSONB and comes as string/object
-    const parsedExecutionTrace: TraceEntry[] | null = dbJob.execution_trace
-      ? typeof dbJob.execution_trace === "string"
-        ? JSON.parse(dbJob.execution_trace)
-        : dbJob.execution_trace
-      : null;
+    // Safely parse JSON fields
+    let executionTrace: TraceEntry[] = [];
+    if (dbJob.execution_trace) {
+      try {
+        executionTrace = JSON.parse(dbJob.execution_trace);
+      } catch (e) {
+        console.error(`Error parsing execution_trace for job ${jobId}:`, e);
+        executionTrace = [];
+      }
+    }
 
-    const resultObject: CodeExecutionResult | null =
-      dbJob.status === "completed" || dbJob.status === "error"
+    const result: CodeExecutionResult | null =
+      dbJob.output || dbJob.error || executionTrace.length > 0
         ? {
             output: dbJob.output || "",
             error: dbJob.error || null,
-            execution_trace: parsedExecutionTrace || [],
-            passFailStatus: dbJob.pass_fail_status as PassFailStatus,
-            execution_time: dbJob.execution_time || null,
+            execution_trace: executionTrace,
+            execution_time: dbJob.execution_time || 0, // Ensure it's a number
           }
         : null;
 
     return {
       jobId: dbJob.job_id,
-      code: dbJob.code,
+      code: dbJob.code, // Include code
       status: dbJob.status as JobStatus,
-      expectedOutput: dbJob.expected_output || null,
-      passFailStatus: dbJob.pass_fail_status as PassFailStatus,
-      output: dbJob.output || null,
-      error: dbJob.error || null,
-      executionTrace: parsedExecutionTrace,
-      executionTime: dbJob.execution_time || null,
+      expectedOutput: dbJob.expected_output || null, // Include expectedOutput
+      passFailStatus: dbJob.pass_fail_status || "not_applicable", // Include passFailStatus
+      executionTime: dbJob.execution_time || null, // Include executionTime
+      embeddingsGenerated: dbJob.embeddings_generated || false,
+      result: result,
     };
   } catch (error: any) {
     console.error(

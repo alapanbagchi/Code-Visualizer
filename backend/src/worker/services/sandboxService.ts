@@ -5,7 +5,7 @@ import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import { CONSTANTS } from "../../common/constants";
 import { CodeExecutionResult, TraceEntry } from "../../common/types";
-import os from "os"; // Import os module
+import os from "os";
 
 // Helper to get platform-specific temp directory
 const getTempDir = () => {
@@ -51,12 +51,20 @@ export const executeCodeInSandbox = async (
       "128m", // Limit memory to 128MB
       "--cpus",
       "0.5", // Limit CPU to 0.5 cores
+      "-e",
+      `PYTHONUNBUFFERED=1`, // Ensure Python output is unbuffered
+      // Pass Qdrant environment variables to the sandbox for potential future use
+      // (e.g., if tracer.py ever needed to interact with Qdrant directly)
+      "-e",
+      `QDRANT_URL=${process.env.QDRANT_URL || ""}`,
+      "-e",
+      `QDRANT_PORT=${process.env.QDRANT_PORT || ""}`,
+      "-e",
+      `QDRANT_API_KEY=${process.env.QDRANT_API_KEY || ""}`,
       "-v",
       `${userCodePath}:/mnt/user_code.py`, // Mount user code
       "-v",
       `${tracerPath}:/mnt/tracer.py`, // Mount tracer.py
-      "-e",
-      "PYTHONUNBUFFERED=1", // Ensure Python output is unbuffered
       CONSTANTS.SANDBOX_IMAGE,
       "python3",
       sandboxTracerPath, // Execute tracer.py
@@ -140,46 +148,39 @@ export const executeCodeInSandbox = async (
     // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+
   return executionResult;
 };
 
-// NEW: Function to process embeddings
+// NEW: Function to process embeddings by directly mounting the script
 export const processEmbeddings = async (
   jobId: string,
   code: string,
   executionTrace: TraceEntry[]
 ): Promise<{ status: string; message: string }> => {
-  const tempDir = path.join(getTempDir(), `codeviz-embed-${jobId}`);
-  const embeddingProcessorPath = path.join(tempDir, "embedding_processor.py");
-  const sandboxEmbeddingProcessorPath = "/mnt/embedding_processor.py";
+  // Directly reference the source path for mounting
+  const embeddingProcessorPath = path.join(
+    __dirname,
+    "../../common/embedding_processor.py"
+  );
+  const sandboxEmbeddingProcessorPath = "/mnt/embedding_processor.py"; // Path inside the Docker container
 
   try {
-    await fs.mkdir(tempDir, { recursive: true });
-    // Copy embedding_processor.py from dist to the temp directory
-    await fs.copyFile(
-      path.join(__dirname, "../../common/embedding_processor.py"), // Source in dist
-      embeddingProcessorPath
-    );
-
     const dockerArgs = [
       "run",
       "--rm",
       "--name",
       `codeviz-embed-${jobId}`,
-      // Network mode: crucial for ChromaDB access
-      // If ChromaDB is on host, use 'host.docker.internal' and bridge network
-      // If ChromaDB is in another Docker container, use a shared Docker network
-      // For simplicity, we'll use 'host' network if running on Linux, or rely on host.docker.internal
-      // for Windows/Mac Docker Desktop.
-      // The Python script itself uses CHROMA_HOST env var.
       "--network",
-      "bridge", // Use bridge network to allow reaching host.docker.internal
+      "bridge", // Use bridge network to allow reaching Qdrant (if Qdrant is on host or another container)
       "-v",
-      `${embeddingProcessorPath}:/mnt/embedding_processor.py`,
+      `${embeddingProcessorPath}:${sandboxEmbeddingProcessorPath}`, // Mount the script directly
       "-e",
-      `CHROMA_HOST=${CONSTANTS.CHROMA_HOST}`, // Pass ChromaDB host
+      `QDRANT_URL=${process.env.QDRANT_URL || ""}`, // Pass Qdrant URL
       "-e",
-      `CHROMA_PORT=${CONSTANTS.CHROMA_PORT}`, // Pass ChromaDB port
+      `QDRANT_PORT=${process.env.QDRANT_PORT || ""}`, // Pass Qdrant Port
+      "-e",
+      `QDRANT_API_KEY=${process.env.QDRANT_API_KEY || ""}`, // Pass Qdrant API Key
       CONSTANTS.SANDBOX_IMAGE,
       "python3",
       sandboxEmbeddingProcessorPath,
@@ -225,7 +226,7 @@ export const processEmbeddings = async (
               resolve(result);
             } else {
               console.error(
-                `Worker: Embedding processing reported non-success for job ${jobId}: ${result.message}. Stderr: ${stderr}`
+                `Worker: Embedding processing failed for job ${jobId}: ${result.message}. Stderr: ${stderr}`
               );
               reject(
                 new Error(
@@ -270,7 +271,5 @@ export const processEmbeddings = async (
       error
     );
     throw new Error(`Embedding setup error: ${error.message}`);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
   }
 };

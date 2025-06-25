@@ -44,12 +44,10 @@ export interface Job {
   status: JobStatus;
   expectedOutput: string | null;
   passFailStatus: PassFailStatus;
-  output: string | null;
-  error: string | null;
-  executionTrace: TraceEntry[] | null;
   executionTime: number | null;
+  embeddingsGenerated: boolean;
+  result: CodeExecutionResult | null;
 }
-
 export interface Request extends Express.Request {
   body: {
     code?: string;

@@ -70,7 +70,7 @@ const CodeExecutionController = {
     if (!jobId || !status) {
       return res.status(400).json({ error: "jobId and status are required" });
     }
-    console.log(result);
+    console.log("RESULT", result);
     try {
       const updated = await jobService.updateJobStatus(
         jobId,

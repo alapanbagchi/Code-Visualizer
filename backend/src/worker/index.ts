@@ -44,7 +44,18 @@ const updateJobStatusOnApi = async (
     if (embeddingsGenerated !== undefined)
       updateData.embeddingsGenerated = embeddingsGenerated; // NEW
 
-    await axios.post(`${API_SERVER_URL}/job-update`, updateData); // Changed to /job-update as per Day 2/3
+    await axios.post(`${API_SERVER_URL}/code/job-update`, {
+      jobId,
+      status,
+      result: {
+        output,
+        error,
+        execution_trace: executionTrace, // NEW
+        passFailStatus,
+        execution_time: executionTime,
+        embeddingsGenerated, // NEW
+      },
+    });
     console.log(
       `Worker: Successfully updated status for job ${jobId} to ${
         status || "partial update"

@@ -4,6 +4,7 @@ import CodeExecutionController from "../controller/codeExecution.controller";
 const router = Router();
 
 router.post("/execute-code", async (req: Request, res: Response) => {
+  console.log("API: Received code execution request");
   CodeExecutionController.executeCode(req, res);
 });
 

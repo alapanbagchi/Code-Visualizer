@@ -6,8 +6,8 @@ WORKDIR /mnt
 RUN pip install --no-cache-dir \
     "torch==2.7.0+cpu" -f https://download.pytorch.org/whl/torch/ \
     "sentence-transformers==2.7.0" \
-    "chromadb==0.5.0" \
-    "numpy==1.26.4"
+    "qdrant-client==1.14.3" \
+    "numpy==2.1.0"
 
 
 # Set environment variable for unbuffered Python output
